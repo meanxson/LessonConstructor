@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d91dc935482072c49bc833a83c11243f, type: 3}
+  m_Name: AttemptScoreAnalyzer
+  m_EditorClassIdentifier: App.Presentation::App.Code.Presentation.Analysis.AttemptScoreAnalyzerAsset
+  displayName: "\u0431\u0430\u043B\u043B\u044B \u0437\u0430 \u043F\u043E\u043F\u044B\u0442\u043A\u0438"
+  firstAttemptPoints: 10
+  secondAttemptPoints: 5
+  laterAttemptPoints: 0

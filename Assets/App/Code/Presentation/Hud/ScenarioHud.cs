@@ -174,7 +174,8 @@ namespace App.Code.Presentation.Hud
         private void ShowReport(AnalysisReport report)
         {
             var builder = new StringBuilder();
-            builder.Append("<b>").Append(texts.Result).Append(": ").Append(report.AnalyzerName).Append("</b>");
+            var analyzerName = runner.LastAnalyzer != null ? runner.LastAnalyzer.DisplayName : report.AnalyzerName;
+            builder.Append("<b>").Append(texts.Result).Append(": ").Append(analyzerName).Append("</b>");
             if (report.Mode.Length > 0) builder.Append(" (").Append(report.Mode).Append(')');
             builder.AppendLine();
             builder.Append("<size=26><b>").Append(texts.Score).Append(": ").Append(Format(report.Score)).Append(" / ")
@@ -184,9 +185,10 @@ namespace App.Code.Presentation.Hud
 
             foreach (var step in report.Steps)
             {
-                var title = runner.TryGetStep(step.StepId, out var scene) ? scene.Instruction : step.StepId;
+                var title = runner.TryGetStep(step.StepId, out var scene) ? scene.Instruction : string.Empty;
                 builder.Append("<color=").Append(StatusColor(step.Status)).Append('>').Append(texts.Status(step.Status)).Append("</color>  ")
-                    .Append(step.StepId).Append(" — ").Append(Shorten(title, 48));
+                    .Append(step.StepId);
+                if (title.Length > 0) builder.Append(" <color=#9aa5b1>").Append(Shorten(title, 26)).Append("</color>");
                 if (step.Attempts > 0) builder.Append("  ").Append(texts.Attempt).Append(' ').Append(step.Attempts);
                 if (step.Violations > 0) builder.Append(", ").Append(texts.Violations).Append(' ').Append(step.Violations);
                 builder.Append("  <b>").Append(step.Points > 0 ? "+" : string.Empty).Append(Format(step.Points)).AppendLine("</b>");

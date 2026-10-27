@@ -66,6 +66,8 @@ namespace App.Code.Presentation.Runner
 
         public AnalysisReport LastReport { get; private set; }
 
+        public AnalyzerAsset LastAnalyzer { get; private set; }
+
         public string LastError { get; private set; } = string.Empty;
 
         public bool TryGetStep(string stepId, out Step step) => _stepsById.TryGetValue(stepId ?? string.Empty, out step);
@@ -85,6 +87,7 @@ namespace App.Code.Presentation.Runner
         {
             StopCurrent();
             LastReport = null;
+            LastAnalyzer = null;
             LastError = string.Empty;
             CurrentMode = mode;
             ResetScene();
@@ -149,6 +152,7 @@ namespace App.Code.Presentation.Runner
         {
             if (analyzer == null) return null;
 
+            LastAnalyzer = analyzer;
             LastReport = analyzer.Create().Analyze(Journal.Records);
             ReportReady?.Invoke(LastReport);
             return LastReport;
