@@ -5,12 +5,14 @@ using App.Code.Domain.Execution;
 using App.Code.Presentation.Analysis;
 using App.Code.Presentation.Demo;
 using App.Code.Presentation.Events;
-using App.Code.Presentation.Hud;
 using App.Code.Presentation.Logging;
 using App.Code.Presentation.Modes;
 using App.Code.Presentation.Runner;
 using App.Code.Presentation.State;
 using App.Code.Presentation.Steps;
+using App.Code.Presentation.UI.Hud;
+using App.Code.Presentation.UI.Hud.Views;
+using TMPro;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -28,11 +30,12 @@ namespace App.Editor.Setup
         public const string ScenePath = "Assets/Scenes/LessonDemo.unity";
         private const string ConfigFolder = "Assets/App/Content/Config";
         private const string MaterialFolder = "Assets/App/Content/Materials";
+        private const string FontPath = "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
 
         private static readonly Color PanelColor = new Color(0.07f, 0.09f, 0.13f, 0.88f);
         private static readonly Color TextColor = new Color(0.93f, 0.95f, 0.98f);
 
-        private static Font _font;
+        private static TMP_FontAsset _font;
         private static DefaultControls.Resources _resources;
 
         [MenuItem("Lesson Constructor/Build Demo Scene")]
@@ -44,7 +47,8 @@ namespace App.Editor.Setup
 
         public static string Build()
         {
-            _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
+            if (_font == null) return $"TextMeshPro font not found at {FontPath}: import TMP Essential Resources first.";
             _resources = new DefaultControls.Resources
             {
                 standard = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"),
@@ -59,14 +63,14 @@ namespace App.Editor.Setup
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             var config = CreateConfig();
 
-            CreateEnvironment(out var camera);
+            CreateEnvironment();
             var player = CreatePlayer();
             var world = CreateWorld(player);
-            var ui = CreateUi(camera);
+            var ui = CreateUi();
             var power = CreatePower(ui.PowerToggle);
             var steps = CreateSteps(world, ui, power);
             var runner = CreateScenario(steps, config);
-            ConfigureHud(ui, runner);
+            ConfigureHud(ui, runner, LoadOrCreate<HudTexts>("HudTexts"));
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -98,16 +102,20 @@ namespace App.Editor.Setup
 
         private sealed class Ui
         {
-            public Canvas Canvas;
-            public ScenarioHud Hud;
+            public HudCompositionRoot Root;
+            public TasksWindow Tasks;
+            public MessageWindow Message;
+            public ControlPanelWindow ControlPanel;
+            public ResultWindow Result;
+            public JournalWindow Journal;
             public Toggle PowerToggle;
             public readonly Dictionary<string, ButtonEventSource> Buttons = new Dictionary<string, ButtonEventSource>();
-            public Text TasksText;
-            public Text MessageText;
+            public TextMeshProUGUI TasksText;
+            public TextMeshProUGUI MessageText;
             public GameObject MessagePanel;
-            public Text ResultText;
+            public TextMeshProUGUI ResultText;
             public GameObject ResultPanel;
-            public Text JournalText;
+            public TextMeshProUGUI JournalText;
             public GameObject JournalPanel;
             public ScrollRect JournalScroll;
             public RectTransform ModeButtons;
@@ -116,7 +124,7 @@ namespace App.Editor.Setup
             public Button Restart;
             public Button JournalToggle;
             public Button LoadFile;
-            public Button CloseResult;
+            public Button HideResult;
         }
 
         private sealed class Power
@@ -154,7 +162,7 @@ namespace App.Editor.Setup
             return asset;
         }
 
-        private static void CreateEnvironment(out Camera camera)
+        private static void CreateEnvironment()
         {
             var light = new GameObject("Directional Light").AddComponent<Light>();
             light.type = LightType.Directional;
@@ -162,7 +170,7 @@ namespace App.Editor.Setup
             light.shadows = LightShadows.Soft;
             light.transform.rotation = Quaternion.Euler(55f, -35f, 0f);
 
-            camera = new GameObject("Main Camera").AddComponent<Camera>();
+            var camera = new GameObject("Main Camera").AddComponent<Camera>();
             camera.tag = "MainCamera";
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.12f, 0.14f, 0.18f);
@@ -247,45 +255,49 @@ namespace App.Editor.Setup
             return source;
         }
 
-        private static Ui CreateUi(Camera camera)
+        private static Ui CreateUi()
         {
-            var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
-            eventSystem.transform.SetAsLastSibling();
+            new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
 
             var ui = new Ui();
             var canvasObject = new GameObject("HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            ui.Canvas = canvasObject.GetComponent<Canvas>();
-            ui.Canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
             var root = canvasObject.transform;
-
-            var tasks = Panel(root, "Tasks Panel", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f), new Vector2(500f, 320f));
-            ui.TasksText = Text(tasks, "Tasks", string.Empty, 20, TextAnchor.UpperLeft);
-            Stretch(ui.TasksText.rectTransform, 18f);
-
-            var controls = Panel(root, "Controls Panel", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -20f), new Vector2(560f, 150f));
-            var controlsTitle = Text(controls, "Title", "Режим прохождения", 20, TextAnchor.UpperLeft);
-            Place(controlsTitle.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(-32f, 28f));
-            ui.ModeButtons = Row(controls, "Mode Buttons", new Vector2(0f, -44f));
-            var actions = Row(controls, "Run Buttons", new Vector2(0f, -96f));
-            ui.Restart = Button(actions, "Перезапустить", 200f);
-            ui.JournalToggle = Button(actions, "Журнал", 140f);
+            ui.Root = canvasObject.AddComponent<HudCompositionRoot>();
 
             ui.Template = Button(root, "Button", 250f);
             ui.Template.gameObject.name = "Button Template";
             ui.Template.gameObject.SetActive(false);
 
-            var message = Panel(root, "Message Panel", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-40f, -20f), new Vector2(700f, 120f));
+            var tasks = Panel(root, "Tasks Window", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f), new Vector2(500f, 320f));
+            ui.TasksText = Text(tasks, "Tasks", string.Empty, 20, TextAlignmentOptions.TopLeft);
+            Stretch(ui.TasksText.rectTransform, 18f);
+            ui.Tasks = tasks.gameObject.AddComponent<TasksWindow>();
+
+            var controls = Panel(root, "Control Panel Window", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -20f), new Vector2(560f, 150f));
+            var controlsTitle = Text(controls, "Title", "Режим прохождения", 20, TextAlignmentOptions.TopLeft);
+            Place(controlsTitle.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(-32f, 28f));
+            ui.ModeButtons = Row(controls, "Mode Buttons", new Vector2(0f, -44f));
+            var actions = Row(controls, "Run Buttons", new Vector2(0f, -96f));
+            ui.Restart = Button(actions, "Перезапустить", 200f);
+            ui.JournalToggle = Button(actions, "Журнал", 140f);
+            ui.ControlPanel = controls.gameObject.AddComponent<ControlPanelWindow>();
+
+            var messageWindow = Layer(root, "Message Window");
+            var message = Panel(messageWindow, "Panel", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-40f, -20f), new Vector2(700f, 120f));
             message.GetComponent<Image>().color = new Color(0.6f, 0.1f, 0.12f, 0.92f);
             ui.MessagePanel = message.gameObject;
-            ui.MessageText = Text(message, "Message", string.Empty, 22, TextAnchor.MiddleCenter);
+            ui.MessageText = Text(message, "Message", string.Empty, 22, TextAlignmentOptions.Center);
             Stretch(ui.MessageText.rectTransform, 14f);
+            ui.Message = messageWindow.gameObject.AddComponent<MessageWindow>();
 
             var console = Panel(root, "Console Panel", new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 20f), new Vector2(1180f, 150f));
-            var consoleTitle = Text(console, "Title", "Пульт: кнопки — события UI Button, тумблер — UnityEvent", 18, TextAnchor.UpperLeft);
+            var consoleTitle = Text(console, "Title", "Пульт: кнопки — события UI Button, тумблер — UnityEvent", 18, TextAlignmentOptions.TopLeft);
             Place(consoleTitle.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(-32f, 26f));
             var consoleRow = Row(console, "Console Buttons", new Vector2(0f, -48f));
             ui.PowerToggle = Toggle(consoleRow, "Питание", 150f);
@@ -302,19 +314,23 @@ namespace App.Editor.Setup
                 ui.Buttons.Add(key, source);
             }
 
-            var result = Panel(root, "Result Panel", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -190f), new Vector2(620f, 690f));
+            var resultWindow = Layer(root, "Result Window");
+            var result = Panel(resultWindow, "Panel", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -190f), new Vector2(620f, 690f));
             result.GetComponent<Image>().color = new Color(0.06f, 0.08f, 0.11f, 0.96f);
             ui.ResultPanel = result.gameObject;
-            ui.ResultText = Text(result, "Result", string.Empty, 17, TextAnchor.UpperLeft);
+            ui.ResultText = Text(result, "Result", string.Empty, 17, TextAlignmentOptions.TopLeft);
             Place(ui.ResultText.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 1f), new Vector2(0f, -14f), new Vector2(-32f, -150f));
             ui.AnalyzerButtons = Row(result, "Analyzer Buttons", Vector2.zero);
             Place(ui.AnalyzerButtons, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 70f), new Vector2(-32f, 46f));
             var resultActions = Row(result, "Result Actions", Vector2.zero);
             Place(resultActions, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 14f), new Vector2(-32f, 46f));
             ui.LoadFile = Button(resultActions, "Загрузить журнал из файла", 330f);
-            ui.CloseResult = Button(resultActions, "Скрыть", 120f);
+            ui.HideResult = Button(resultActions, "Скрыть", 120f);
+            ui.Result = resultWindow.gameObject.AddComponent<ResultWindow>();
 
-            var journal = Panel(root, "Journal Panel", new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 190f), new Vector2(1000f, 340f));
+            var journalWindow = Layer(root, "Journal Window");
+            var journal = Panel(journalWindow, "Panel", new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 190f), new Vector2(1000f, 340f));
+            journal.GetComponent<Image>().color = new Color(0.05f, 0.06f, 0.09f, 0.94f);
             ui.JournalPanel = journal.gameObject;
             var scrollObject = DefaultControls.CreateScrollView(_resources);
             scrollObject.name = "Journal Scroll";
@@ -331,12 +347,12 @@ namespace App.Editor.Setup
             layout.childControlWidth = true;
             layout.childForceExpandHeight = false;
             content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            ui.JournalText = Text(content, "Journal", string.Empty, 15, TextAnchor.UpperLeft);
+            ui.JournalText = Text(content, "Journal", string.Empty, 15, TextAlignmentOptions.TopLeft);
+            ui.JournalText.textWrappingMode = TextWrappingModes.Normal;
+            ui.Journal = journalWindow.gameObject.AddComponent<JournalWindow>();
 
-            ui.Hud = canvasObject.AddComponent<ScenarioHud>();
             return ui;
         }
-
         private static Power CreatePower(Toggle toggle)
         {
             var root = new GameObject("Power");
@@ -471,50 +487,45 @@ namespace App.Editor.Setup
             return mode;
         }
 
-        private static void ConfigureHud(Ui ui, ScenarioRunner runner)
+        private static void ConfigureHud(Ui ui, ScenarioRunner runner, HudTexts texts)
         {
-            EditorAssign.Set(ui.Hud,
-                ("runner", runner),
-                ("tasksText", ui.TasksText),
-                ("messageText", ui.MessageText),
-                ("messagePanel", ui.MessagePanel),
-                ("resultText", ui.ResultText),
-                ("resultPanel", ui.ResultPanel),
-                ("journalText", ui.JournalText),
-                ("journalPanel", ui.JournalPanel),
-                ("journalScroll", ui.JournalScroll),
-                ("modeButtons", ui.ModeButtons),
-                ("analyzerButtons", ui.AnalyzerButtons),
-                ("buttonTemplate", ui.Template),
-                ("restartButton", ui.Restart),
-                ("journalButton", ui.JournalToggle),
-                ("loadFileButton", ui.LoadFile),
-                ("closeResultButton", ui.CloseResult),
-                ("texts.activeTasks", "Активные задания"),
-                ("texts.mode", "Режим"),
-                ("texts.group", "Группа"),
-                ("texts.groupViolations", "Нарушений в группе"),
-                ("texts.progress", "Завершено шагов"),
-                ("texts.finished", "Сценарий завершён — результат справа"),
-                ("texts.notStarted", "Выберите режим справа сверху"),
-                ("texts.outOfTurn", "Действие вне очереди"),
-                ("texts.retry", "повторите шаг"),
-                ("texts.failed", "шаг провален"),
-                ("texts.result", "Результат"),
-                ("texts.score", "Итог"),
-                ("texts.attempt", "поп."),
-                ("texts.violations", "нар."),
-                ("texts.warnings", "Предупреждения анализатора"),
-                ("texts.journal", "Журнал событий"),
-                ("texts.journalSource", "Источник"),
-                ("texts.analyzeWith", "Оценить"),
-                ("texts.statusPending", "Ожидает"),
-                ("texts.statusActive", "Активен"),
-                ("texts.statusCompleted", "Выполнен"),
-                ("texts.statusFailed", "Провален"),
-                ("texts.statusSkipped", "Пропущен"));
-        }
+            EditorAssign.Set(texts,
+                ("activeTasks", "Активные задания"),
+                ("mode", "Режим"),
+                ("group", "Группа"),
+                ("groupViolations", "Нарушений в группе"),
+                ("progress", "Завершено шагов"),
+                ("finished", "Сценарий завершён — результат справа"),
+                ("notStarted", "Выберите режим справа сверху"),
+                ("outOfTurn", "Действие вне очереди"),
+                ("retry", "повторите шаг"),
+                ("failed", "шаг провален"),
+                ("result", "Результат"),
+                ("score", "Итог"),
+                ("attempt", "поп."),
+                ("violations", "нар."),
+                ("warnings", "Предупреждения анализатора"),
+                ("journal", "Журнал событий"),
+                ("journalSource", "Источник"),
+                ("analyzeWith", "Оценить"),
+                ("statusPending", "Ожидает"),
+                ("statusActive", "Активен"),
+                ("statusCompleted", "Выполнен"),
+                ("statusFailed", "Провален"),
+                ("statusSkipped", "Пропущен"));
 
+            EditorAssign.Set(ui.Tasks, ("texts", texts), ("label", ui.TasksText));
+            EditorAssign.Set(ui.Message, ("texts", texts), ("panel", ui.MessagePanel), ("label", ui.MessageText));
+            EditorAssign.Set(ui.ControlPanel, ("modeButtons", ui.ModeButtons), ("buttonTemplate", ui.Template),
+                ("restartButton", ui.Restart), ("journalButton", ui.JournalToggle));
+            EditorAssign.Set(ui.Result, ("texts", texts), ("panel", ui.ResultPanel), ("label", ui.ResultText),
+                ("analyzerButtons", ui.AnalyzerButtons), ("buttonTemplate", ui.Template), ("loadFileButton", ui.LoadFile),
+                ("hideButton", ui.HideResult));
+            EditorAssign.Set(ui.Journal, ("texts", texts), ("panel", ui.JournalPanel), ("label", ui.JournalText),
+                ("scroll", ui.JournalScroll));
+            EditorAssign.Set(ui.Root, ("runner", runner), ("tasksWindow", ui.Tasks), ("messageWindow", ui.Message),
+                ("controlPanelWindow", ui.ControlPanel), ("resultWindow", ui.Result), ("journalWindow", ui.Journal));
+        }
         private static GameObject Primitive(PrimitiveType type, string name, Transform parent, Vector3 position, Vector3 scale, Material material)
         {
             var primitive = GameObject.CreatePrimitive(type);
@@ -545,21 +556,31 @@ namespace App.Editor.Setup
 
         private static void Label(Transform parent, string caption, Vector3 offset)
         {
-            var label = new GameObject("Label");
+            var label = new GameObject("Label", typeof(RectTransform));
             label.transform.SetParent(parent, false);
             label.transform.position = parent.position + offset;
             label.transform.rotation = Quaternion.Euler(52f, 0f, 0f);
             var lossy = parent.lossyScale;
             label.transform.localScale = new Vector3(1f / lossy.x, 1f / lossy.y, 1f / lossy.z);
-            var text = label.AddComponent<TextMesh>();
-            text.text = caption;
+            var text = label.AddComponent<TextMeshPro>();
             text.font = _font;
-            text.fontSize = 48;
-            text.characterSize = 0.09f;
-            text.anchor = TextAnchor.MiddleCenter;
-            text.alignment = TextAlignment.Center;
+            text.text = caption;
+            text.fontSize = 4.2f;
+            text.alignment = TextAlignmentOptions.Center;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
             text.color = Color.white;
-            label.GetComponent<MeshRenderer>().sharedMaterial = _font.material;
+            text.outlineWidth = 0.2f;
+            text.outlineColor = new Color32(0, 0, 0, 200);
+            text.rectTransform.sizeDelta = new Vector2(8f, 1.5f);
+        }
+
+        private static RectTransform Layer(Transform parent, string name)
+        {
+            var layer = new GameObject(name, typeof(RectTransform));
+            layer.transform.SetParent(parent, false);
+            var rect = (RectTransform)layer.transform;
+            Stretch(rect, 0f);
+            return rect;
         }
 
         private static RectTransform Panel(Transform parent, string name, Vector2 anchor, Vector2 pivot, Vector2 position, Vector2 size)
@@ -590,20 +611,20 @@ namespace App.Editor.Setup
             return rect;
         }
 
-        private static Text Text(Transform parent, string name, string content, int size, TextAnchor anchor)
+        private static TextMeshProUGUI Text(Transform parent, string name, string content, float size, TextAlignmentOptions alignment)
         {
-            var textObject = new GameObject(name, typeof(RectTransform), typeof(Text));
+            var textObject = new GameObject(name, typeof(RectTransform));
             textObject.transform.SetParent(parent, false);
-            var text = textObject.GetComponent<Text>();
+            var text = textObject.AddComponent<TextMeshProUGUI>();
             text.font = _font;
             text.text = content;
             text.fontSize = size;
-            text.alignment = anchor;
+            text.alignment = alignment;
             text.color = TextColor;
-            text.supportRichText = true;
+            text.richText = true;
             text.raycastTarget = false;
-            text.horizontalOverflow = HorizontalWrapMode.Wrap;
-            text.verticalOverflow = VerticalWrapMode.Truncate;
+            text.textWrappingMode = TextWrappingModes.Normal;
+            text.overflowMode = TextOverflowModes.Truncate;
             return text;
         }
 
@@ -612,11 +633,7 @@ namespace App.Editor.Setup
             var buttonObject = DefaultControls.CreateButton(_resources);
             buttonObject.name = caption;
             buttonObject.transform.SetParent(parent, false);
-            var label = buttonObject.GetComponentInChildren<Text>();
-            label.font = _font;
-            label.text = caption;
-            label.fontSize = 19;
-            label.color = new Color(0.1f, 0.12f, 0.16f);
+            ReplaceLabel(buttonObject.GetComponentInChildren<Text>(), caption, new Color(0.1f, 0.12f, 0.16f), TextAlignmentOptions.Center);
             buttonObject.AddComponent<LayoutElement>().preferredWidth = width;
             ((RectTransform)buttonObject.transform).sizeDelta = new Vector2(width, 44f);
             return buttonObject.GetComponent<Button>();
@@ -627,23 +644,38 @@ namespace App.Editor.Setup
             var toggleObject = DefaultControls.CreateToggle(_resources);
             toggleObject.name = $"Toggle {caption}";
             toggleObject.transform.SetParent(parent, false);
-            var label = toggleObject.GetComponentInChildren<Text>();
-            label.font = _font;
-            label.text = caption;
-            label.fontSize = 19;
-            label.color = TextColor;
+            var label = ReplaceLabel(toggleObject.GetComponentInChildren<Text>(), caption, TextColor, TextAlignmentOptions.Left);
             toggleObject.AddComponent<LayoutElement>().preferredWidth = width;
             var toggle = toggleObject.GetComponent<Toggle>();
             toggle.isOn = false;
             var background = (RectTransform)toggle.targetGraphic.transform;
-            background.anchoredPosition = new Vector2(10f, -12f);
+            background.anchoredPosition = new Vector2(10f, -23f);
             background.sizeDelta = new Vector2(26f, 26f);
             var labelRect = label.rectTransform;
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
             labelRect.offsetMin = new Vector2(44f, 0f);
             labelRect.offsetMax = Vector2.zero;
             return toggle;
         }
 
+        private static TextMeshProUGUI ReplaceLabel(Text legacy, string caption, Color color, TextAlignmentOptions alignment)
+        {
+            var host = legacy.gameObject;
+            Object.DestroyImmediate(legacy);
+            var label = host.AddComponent<TextMeshProUGUI>();
+            label.font = _font;
+            label.text = caption;
+            label.fontSize = 19f;
+            label.color = color;
+            label.alignment = alignment;
+            label.raycastTarget = false;
+            label.textWrappingMode = TextWrappingModes.Normal;
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 12f;
+            label.fontSizeMax = 19f;
+            return label;
+        }
         private static void Place(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 position, Vector2 size)
         {
             rect.anchorMin = anchorMin;

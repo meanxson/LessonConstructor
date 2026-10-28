@@ -15,23 +15,7 @@ using UnityEngine;
 
 namespace App.Code.Presentation.Runner
 {
-    public readonly struct ViolationEvent
-    {
-        public ViolationEvent(Step step, ViolationNotice notice, string message)
-        {
-            Step = step;
-            Notice = notice;
-            Message = message;
-        }
-
-        public Step Step { get; }
-
-        public ViolationNotice Notice { get; }
-
-        public string Message { get; }
-    }
-
-    public sealed class ScenarioRunner : MonoBehaviour
+    public sealed class ScenarioRunner : MonoBehaviour, IScenarioRunner
     {
         [SerializeField] private List<ScenarioMode> modes = new List<ScenarioMode>();
         [SerializeField, Min(0)] private int defaultModeIndex;
@@ -56,6 +40,16 @@ namespace App.Code.Presentation.Runner
 
         public IReadOnlyList<AnalyzerAsset> Analyzers => analyzers;
 
+        public IReadOnlyList<string> ModeNames => modes.Select(mode => mode != null ? mode.DisplayName : string.Empty).ToArray();
+
+        public IReadOnlyList<string> AnalyzerNames => analyzers.Select(analyzer => analyzer != null ? analyzer.DisplayName : string.Empty).ToArray();
+
+        public string CurrentModeName => CurrentMode != null ? CurrentMode.DisplayName : string.Empty;
+
+        public IReadOnlyList<LogRecord> Records => Journal.Records;
+
+        public string LastAnalyzerName => LastAnalyzer != null ? LastAnalyzer.DisplayName : LastReport?.AnalyzerName ?? string.Empty;
+
         public ScenarioMode CurrentMode { get; private set; }
 
         public ScenarioSession Session { get; private set; }
@@ -70,7 +64,17 @@ namespace App.Code.Presentation.Runner
 
         public string LastError { get; private set; } = string.Empty;
 
-        public bool TryGetStep(string stepId, out Step step) => _stepsById.TryGetValue(stepId ?? string.Empty, out step);
+        public bool TryGetInstruction(string stepId, out string instruction)
+        {
+            var step = modes.Where(mode => mode != null).SelectMany(mode => mode.Steps).FirstOrDefault(candidate => candidate.Id == stepId);
+            instruction = step != null ? step.Instruction : string.Empty;
+            return step != null;
+        }
+
+        public void Analyze(int analyzerIndex)
+        {
+            if (analyzerIndex >= 0 && analyzerIndex < analyzers.Count) Analyze(analyzers[analyzerIndex]);
+        }
 
         public void StartMode(int index)
         {
@@ -274,8 +278,8 @@ namespace App.Code.Presentation.Runner
 
         private void OnViolationRecorded(ViolationNotice notice)
         {
-            _stepsById.TryGetValue(notice.StepId, out var step);
-            ViolationRaised?.Invoke(new ViolationEvent(step, notice, _pendingViolationMessage));
+            TryGetInstruction(notice.StepId, out var instruction);
+            ViolationRaised?.Invoke(new ViolationEvent(instruction.Length > 0 ? instruction : notice.StepId, notice, _pendingViolationMessage));
             _pendingViolationMessage = string.Empty;
         }
 

@@ -6,7 +6,8 @@
         "App.Infrastructure",
         "App.Presentation",
         "UnityEngine.UI",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [
         "Editor"
