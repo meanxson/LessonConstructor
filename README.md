@@ -295,4 +295,4 @@ App.Presentation ──► App.Infrastructure ──► App.Domain
 
 ## 8. Затраченное время
 
-_Заполнить перед отправкой: ___ ч._
+4 часа.
